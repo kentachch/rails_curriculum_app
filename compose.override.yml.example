@@ -1,0 +1,27 @@
+# worktree 用の Docker Compose 設定（メインリポジトリでは使わない）
+#
+# bin/wt-serve / bin/wt-test が worktree 内に compose.override.yml としてコピーし、
+# .env（WORKTREE_INDEX / APP_PORT）も自動生成するので、通常は手で触らなくてよい。
+#
+# 方針:
+#   - DB はメインリポジトリの db コンテナを共有する（worktree では db を起動しない＝5432 の衝突を避ける）
+#   - 開発 DB は共有、テスト DB は worktree ごとに分離（myapp_test_wt1, _wt2, …）
+#   - web は worktree ごとに別ポート（3001, 3002, …）で起動する
+#   - コンテナ名・ネットワーク・volume はディレクトリ名ごとの compose プロジェクトで自然に分かれる
+
+services:
+  web:
+    ports: !override
+      - "${APP_PORT:-3000}:3000"
+    depends_on: !reset {}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    # db:prepare はしない（共有の開発 DB にこのブランチの migration を勝手に当てないため）
+    command: bash -c "bundle install && yarn install && rm -f tmp/pids/server.pid && ./bin/dev"
+    environment:
+      DB_HOST: host.docker.internal
+      TEST_DB_SUFFIX: _wt${WORKTREE_INDEX:-0}
+
+  db:
+    # worktree では起動しない（メインの db を共有する）
+    profiles: ["main-only"]

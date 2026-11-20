@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+#
+# テストを Docker 内で回すラッパー（メインでも worktree でも同じコマンドで動く）。
+#
+# worktree の場合は初回セットアップを自動で行う:
+#   1. メインリポジトリの db コンテナ稼働チェック（DB はメインと共有）
+#   2. compose.override.yml / .env の自動生成（WORKTREE_INDEX・APP_PORT を自動採番）
+#   3. gem / node_modules が無ければインストール（worktree ごとの volume に入る）
+#   4. テスト DB（myapp_test_wt<N>）を db:test:prepare で準備
+#   5. bin/rails test を一時コンテナで実行（サーバーは起動しない・ポートも塞がない）
+#
+# 使い方:
+#   bin/wt-test                                    # 全テスト（system test は除く）
+#   bin/wt-test test/models/user_test.rb           # 1 ファイル
+#   bin/wt-test test/models/user_test.rb:42        # 1 テスト
+#
+# メインリポジトリでは起動中の web コンテナで実行する（先に docker compose up -d しておく）。
+set -euo pipefail
+
+# shellcheck source=bin/_wt_setup.sh
+. "$(dirname "$0")/_wt_setup.sh"
+wt_cd_root
+
+test_cmd='bin/rails db:test:prepare && bin/rails test "$@"'
+
+if wt_is_main; then
+  if [ -z "$(docker compose ps -q --status running web)" ]; then
+    echo "ERROR: web コンテナが起動していません。docker compose up -d を実行してください。" >&2
+    exit 1
+  fi
+  exec docker compose exec -e RAILS_ENV=test web bash -c "$test_cmd" _ "$@"
+fi
+
+wt_require_db
+wt_ensure_env
+
+setup_cmd='(bundle check >/dev/null || bundle install) && ([ -x node_modules/.bin/esbuild ] || yarn install)'
+exec docker compose run --rm --no-deps -e RAILS_ENV=test web \
+  bash -c "${setup_cmd} && ${test_cmd}" _ "$@"

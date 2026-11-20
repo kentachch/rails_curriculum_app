@@ -38,3 +38,6 @@
 !/app/assets/builds/.keep
 
 /node_modules
+
+# worktree 並列開発用のローカル Docker 設定（正本は compose.override.yml.example）
+/compose.override.yml
