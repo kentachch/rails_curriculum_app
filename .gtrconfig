@@ -1,0 +1,7 @@
+[copy]
+# worktree 作成時にメインリポジトリからコピーするファイル（git 管理外のもの）
+include = config/master.key
+
+[defaults]
+editor = vscode
+ai = claude

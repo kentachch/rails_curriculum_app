@@ -18,7 +18,8 @@ default: &default
   # For details on connection pooling, see Rails configuration guide
   # https://guides.rubyonrails.org/configuring.html#database-pooling
   pool: <%= ENV.fetch("RAILS_MAX_THREADS") { 5 } %>
-  host: db
+  # worktree では compose.override.yml が DB_HOST=host.docker.internal を渡し、メインの db コンテナを共有する
+  host: <%= ENV.fetch("DB_HOST") { "db" } %>
   username: postgres
   password: password
 
@@ -58,7 +59,9 @@ development:
 # Do not set this db to the same as development or production.
 test:
   <<: *default
-  database: myapp_test
+  # TEST_DB_SUFFIX: worktree ごとにテスト DB を分離する（例 "_wt1" → myapp_test_wt1）。
+  # 複数 worktree で同時にテストしても互いの DB を壊さないため。メインでは空＝myapp_test。
+  database: myapp_test<%= ENV.fetch("TEST_DB_SUFFIX", "") %>
 
 # As with config/credentials.yml, you never want to store sensitive information,
 # like your database password, in your source code. If your source code is

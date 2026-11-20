@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+#
+# worktree の動作確認サーバーを「使うときだけ」起動する。
+#   - worktree ごとの別ポート（3001, 3002, …）で起動し、応答したらブラウザを自動で開く
+#   - フォアグラウンド実行: Ctrl+C でコンテナの停止・削除まで自動で行う（立ち上げっぱなしにならない）
+#   - 開発 DB はメインと共有（いつものデータが見える）
+#
+# 使い方:
+#   bin/wt-serve      # 起動 → ブラウザで確認 → Ctrl+C で終了・片付け
+#
+# 注意:
+#   - ブランチに新しい migration がある場合、共有の開発 DB に適用するとメイン側にも影響する。
+#     画面確認に必要なら影響を理解したうえで docker compose run --rm web bin/rails db:migrate を実行する
+#   - 初回は bundle install / yarn install が走るので起動まで数分かかる
+set -euo pipefail
+
+# shellcheck source=bin/_wt_setup.sh
+. "$(dirname "$0")/_wt_setup.sh"
+wt_cd_root
+
+if wt_is_main; then
+  echo "メインリポジトリでは従来どおり docker compose up を使ってください (http://localhost:3000)" >&2
+  exit 1
+fi
+
+wt_require_db
+wt_ensure_env
+
+port=$(wt_app_port)
+url="http://localhost:${port}"
+
+# サーバーが応答し始めたらブラウザを開く（最大5分待つ・macOS の open がある場合のみ）
+if command -v open >/dev/null; then
+  (
+    for _ in $(seq 1 300); do
+      sleep 1
+      if curl -s -o /dev/null "$url"; then
+        open "$url"
+        exit 0
+      fi
+    done
+  ) &
+fi
+
+# Ctrl+C・ターミナル終了時にコンテナ・ネットワークを片付ける
+trap 'echo; echo "==> 片付け中（docker compose down）"; docker compose down >/dev/null 2>&1 || true' EXIT INT TERM HUP
+
+# 番犬: trap が走らない死に方をしても約10秒以内にコンテナを片付ける
+serve_pid=$$
+(
+  trap '' HUP
+  while kill -0 "$serve_pid" 2>/dev/null; do sleep 10; done
+  docker compose down >/dev/null 2>&1 || true
+) &
+disown
+
+echo "=============================================="
+echo "  ${url} で起動します"
+echo "  終了するには Ctrl+C（コンテナの片付けまで自動）"
+echo "=============================================="
+docker compose up web
